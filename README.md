@@ -21,6 +21,78 @@ Return only valid JSON — no fences, no commentary, no extra keys:
 
 Starts and ends are absolute seconds as numbers. Clips do not overlap and stay inside the requested duration range. The full contract, defaults, and validation checklist live in [`references/openshorts.md`](references/openshorts.md).
 
+## Timeline export (optional)
+
+The JSON contract stays the only analysis output. When you want to start editing, [`scripts/export_timeline.py`](scripts/export_timeline.py) turns that JSON into a timeline you can import:
+
+- **FCPXML 1.9** (`.fcpxml`) — DaVinci Resolve and Final Cut Pro.
+- **CMX3600 EDL** (`.edl`) — Resolve, Premiere Pro, and most other NLEs.
+
+Every clip is placed end to end on one "selects" timeline. The OpenShorts title becomes the clip name and a timeline marker. Clips reference the original media; nothing is transcoded or copied.
+
+```bash
+# Resolve/FCP
+python .agents/skills/clipper/scripts/export_timeline.py \
+  transcripts/i_WVOVSweEg.clips.json --media podcast.mp4
+
+# Both formats, vertical 1080x1920, 29.97 fps
+python .agents/skills/clipper/scripts/export_timeline.py \
+  transcripts/i_WVOVSweEg.clips.json --media podcast.mp4 \
+  --format both --width 1080 --height 1920 --fps 29.97
+
+# No local file yet: download the source first with yt-dlp
+python .agents/skills/clipper/scripts/export_timeline.py \
+  transcripts/i_WVOVSweEg.clips.json --url https://youtu.be/i_WVOVSweEg
+```
+
+Requirements: Python 3.9+, `ffmpeg`/`ffprobe` on `PATH`, and `yt-dlp` only when using `--url`. Frame rate, size, duration, and audio presence are read from the media; override them with `--fps`, `--width`, `--height`, `--duration`. Other useful flags: `--gap` (black between clips), `--sort start|score`, `--no-audio`, `--name`, `--out-dir`.
+
+### Subtitles
+
+Subtitles are retimed **by default**. The exporter looks next to the clips file and the media for a matching `.srt`, `.vtt`, or OpenShorts transcript export `.json` (`<name>.srt`, `<name>.vtt`, `<name>.json`) and writes an SRT for every timeline:
+
+- combined: `<name>.timeline.srt`
+- split: `<name>.timelines/01-<slug>.srt`
+
+Cue times are clipped to each cut, shifted to their new timeline position, and follow `--gap` and `--handles`. Pick a file explicitly with `--subtitles captions.srt`, or skip auto-detection with `--no-subtitles`.
+
+In Resolve: import the `.srt` into the Media Pool (right-click → **Import Subtitle**), then drag it onto the timeline's subtitle track. Subtitles stay editable. Overlapping cues from the source keep their timing; Resolve may trim them to fit one subtitle track. Nothing is burned into the picture.
+
+### One timeline vs. separate timelines
+
+By default all clips go on one **selects** timeline. For production work where each clip needs its own trim, reframe, subtitles, and export, use `--layout split` or `--layout both`:
+
+```bash
+# One timeline per clip, with 1.5s of extra footage on each side
+python .agents/skills/clipper/scripts/export_timeline.py \
+  transcripts/i_WVOVSweEg.clips.json --media podcast.mp4 \
+  --layout split --handles 1.5 --format both
+
+# Keep the selects overview and also emit the per-clip timelines
+python .agents/skills/clipper/scripts/export_timeline.py \
+  transcripts/i_WVOVSweEg.clips.json --media podcast.mp4 --layout both
+```
+
+Split output goes to a `<clips-name>.timelines/` folder, one file per clip:
+
+```text
+transcripts/i_WVOVSweEg.timelines/
+├── 01-sampo-dulu-atau-sabun-dulu.fcpxml
+├── 02-pengin-jackson-menang.fcpxml
+└── ...
+```
+
+Why separate files instead of one FCPXML with several projects? Resolve does not reliably import every project from one FCPXML — in practice it exposes only one sequence at import time. One file per timeline is predictable: import each file, and each becomes its own timeline.
+
+`--handles` adds footage before and after the selected cut (clamped to the media) so the editor can adjust the in/out without going back to the source. It only applies to split timelines; `--gap` only applies to the combined timeline.
+
+Notes:
+
+- Cut points are snapped to the nearest frame of the chosen rate, so a millisecond of transcript timing can move.
+- In Resolve: `File > Import > Timeline` and choose the `.fcpxml`. The media is linked by absolute path; use the Media Pool's "Relink" if you move it.
+- For 9:16 output, pass `--width 1080 --height 1920`. The source is not auto-cropped — framing remains an editorial decision.
+- An EDL carries cuts and clip names but not transforms, effects, or marker text. FCPXML is the richer format.
+
 ## Duration and count
 
 For a plain transcript, the defaults are 30–90 seconds and 5–8 distinct clips. An OpenShorts export's `clip_duration_seconds` and `recommended_clip_count` override both. There is no padding to hit a count, and no payoff is cut to fit a duration.
@@ -41,6 +113,8 @@ The transcript is an intermediate file, not a deliverable. See [`references/yout
 ```text
 clipper/
 ├── SKILL.md                  # entry point: stance, workflow, routing, non-negotiables
+├── scripts/
+│   └── export_timeline.py    # optional: clip-selection JSON → FCPXML/EDL
 ├── references/
 │   ├── openshorts.md         # contract: output schema, limits, defaults, validation
 │   └── youtube.md            # YouTube → transcript workflow
@@ -97,3 +171,5 @@ See `examples/README.md` for the full checklist.
 ## Limitations
 
 The skill selects and ranks editorial moments; it does not cut video or guarantee virality. Subtitle-only analysis cannot verify framing, on-screen action, or visual reactions. YouTube captions may be absent, inaccurate, translated, or inaccessible, and local transcription accuracy varies. Only retrieve content you are authorized to access and respect applicable terms and law.
+
+The timeline exporter builds an edit from existing timecodes; it does not transcode, crop, reframe, or burn captions. It also cannot repair unreliable timestamps. Importing a timeline into an NLE does not replace the media, so keep the source file at its original path or relink it after import.
