@@ -47,6 +47,17 @@ python .agents/skills/clipper/scripts/export_timeline.py \
 
 Requirements: Python 3.9+, `ffmpeg`/`ffprobe` on `PATH`, and `yt-dlp` only when using `--url`. Frame rate, size, duration, and audio presence are read from the media; override them with `--fps`, `--width`, `--height`, `--duration`. Other useful flags: `--gap` (black between clips), `--sort start|score`, `--no-audio`, `--name`, `--out-dir`.
 
+### Subtitles
+
+Subtitles are retimed **by default**. The exporter looks next to the clips file and the media for a matching `.srt`, `.vtt`, or OpenShorts transcript export `.json` (`<name>.srt`, `<name>.vtt`, `<name>.json`) and writes an SRT for every timeline:
+
+- combined: `<name>.timeline.srt`
+- split: `<name>.timelines/01-<slug>.srt`
+
+Cue times are clipped to each cut, shifted to their new timeline position, and follow `--gap` and `--handles`. Pick a file explicitly with `--subtitles captions.srt`, or skip auto-detection with `--no-subtitles`.
+
+In Resolve: import the `.srt` into the Media Pool (right-click → **Import Subtitle**), then drag it onto the timeline's subtitle track. Subtitles stay editable. Overlapping cues from the source keep their timing; Resolve may trim them to fit one subtitle track. Nothing is burned into the picture.
+
 ### One timeline vs. separate timelines
 
 By default all clips go on one **selects** timeline. For production work where each clip needs its own trim, reframe, subtitles, and export, use `--layout split` or `--layout both`:

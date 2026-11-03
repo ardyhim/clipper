@@ -161,4 +161,4 @@ There is no visual-review field in the OpenShorts contract: prefer moments that 
 
 ## Optional post-processing
 
-Timeline export is a separate step, not part of the analysis response. If the user explicitly asks to open the clips in an NLE, run [`scripts/export_timeline.py`](scripts/export_timeline.py) on the JSON you produced. It writes FCPXML/EDL selects timelines and needs the source video; see [README.md](README.md#timeline-export-optional). Never add export keys or commentary to the OpenShorts JSON.
+Timeline export is a separate step, not part of the analysis response. If the user explicitly asks to open the clips in an NLE, run [`scripts/export_timeline.py`](scripts/export_timeline.py) on the JSON you produced. It writes FCPXML/EDL selects timelines, retimes an SRT/VTT/transcript export into matching `.srt` files by default, and needs the source video; see [README.md](README.md#timeline-export-optional). Never add export keys or commentary to the OpenShorts JSON.

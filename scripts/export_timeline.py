@@ -10,10 +10,15 @@ Every clip is laid end to end on a single "selects" timeline, or exported as
 its own timeline with ``--layout split``. Clip names and markers carry the
 OpenShorts title, so the edit stays navigable after import.
 
+Subtitles are retimed by default when an SRT, VTT, or transcript export sits
+next to the clips file (or the media). Each timeline gets a matching ``.srt``
+with cue times shifted to the new edit. Use ``--no-subtitles`` to skip.
+
 Examples:
     python export_timeline.py clips.json --media podcast.mp4
     python export_timeline.py clips.json --media podcast.mp4 --format both
     python export_timeline.py clips.json --media podcast.mp4 --layout split --handles 1.5
+    python export_timeline.py clips.json --subtitles captions.srt --media podcast.mp4
     python export_timeline.py clips.json --url https://youtu.be/VIDEO_ID --fps 29.97
 """
 
@@ -190,6 +195,13 @@ class Clip:
     timeline_offset: int = 0
 
 
+@dataclass
+class Cue:
+    start: Fraction
+    end: Fraction
+    text: str
+
+
 def load_clips(path: Path, fps: Fraction, sort_mode: str) -> list[Clip]:
     try:
         data = json.loads(path.read_text(encoding="utf-8-sig"))
@@ -247,6 +259,131 @@ def load_clips(path: Path, fps: Fraction, sort_mode: str) -> list[Clip]:
                 "the selects timeline repeats that footage"
             )
     return clips
+
+
+def parse_timestamp(value: str) -> Fraction:
+    text = value.strip().replace(",", ".")
+    parts = text.split(":")
+    try:
+        if len(parts) == 3:
+            hours, minutes, seconds = parts
+            return Fraction(hours) * 3600 + Fraction(minutes) * 60 + Fraction(seconds)
+        if len(parts) == 2:
+            minutes, seconds = parts
+            return Fraction(minutes) * 60 + Fraction(seconds)
+    except (ValueError, ZeroDivisionError):
+        pass
+    raise ValueError(f"invalid subtitle timestamp: {value!r}")
+
+
+def parse_subtitle_text(text: str) -> list[Cue]:
+    """Parse SRT or WebVTT text into cues."""
+    cues: list[Cue] = []
+    for block in re.split(r"\r?\n\s*\r?\n", text.strip()):
+        lines = [line for line in block.splitlines() if line.strip()]
+        timestamp_index = next((i for i, line in enumerate(lines) if "-->" in line), None)
+        if timestamp_index is None:
+            continue
+        left, right = lines[timestamp_index].split("-->", 1)
+        right = right.strip().split()[0] if right.strip() else ""
+        try:
+            start = parse_timestamp(left)
+            end = parse_timestamp(right)
+        except (ValueError, IndexError):
+            continue
+        content = "\n".join(lines[timestamp_index + 1 :]).strip()
+        if content and end > start:
+            cues.append(Cue(start=start, end=end, text=content))
+    cues.sort(key=lambda cue: (cue.start, cue.end))
+    return cues
+
+
+def parse_transcript_export(path: Path) -> list[Cue]:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8-sig"))
+    except json.JSONDecodeError:
+        return []
+    segments = (data.get("transcript") or {}).get("segments") or []
+    cues: list[Cue] = []
+    for segment in segments:
+        if not isinstance(segment, dict):
+            continue
+        try:
+            start = Fraction(str(segment.get("start")))
+            end = Fraction(str(segment.get("end")))
+        except (TypeError, ValueError, ZeroDivisionError):
+            continue
+        text = str(segment.get("text") or "").strip()
+        if text and start >= 0 and end > start:
+            cues.append(Cue(start=start, end=end, text=text))
+    cues.sort(key=lambda cue: (cue.start, cue.end))
+    return cues
+
+
+def load_cues(path: Path) -> list[Cue]:
+    suffix = path.suffix.lower()
+    if suffix in {".srt", ".vtt"}:
+        return parse_subtitle_text(path.read_text(encoding="utf-8-sig"))
+    if suffix == ".json":
+        return parse_transcript_export(path)
+    fail(f"unsupported subtitle format: {path.suffix} (use .srt, .vtt, or a transcript export .json)")
+
+
+def find_subtitles(clips_path: Path, media: Path) -> Path | None:
+    """Look for <name>.srt/.vtt or a transcript export next to the clips or media."""
+    bases = [default_base_name(clips_path), media.stem]
+    directories = [clips_path.parent, media.parent]
+    seen: set[Path] = set()
+    for directory in directories:
+        for base in bases:
+            for suffix in (".srt", ".vtt", ".json"):
+                candidate = (directory / f"{base}{suffix}").resolve()
+                if candidate in seen or candidate == clips_path.resolve():
+                    continue
+                seen.add(candidate)
+                if not candidate.is_file():
+                    continue
+                if suffix == ".json" and not parse_transcript_export(candidate):
+                    continue
+                return candidate
+    return None
+
+
+def timeline_cues(cues: list[Cue], clips: list[Clip], fps: Fraction) -> list[Cue]:
+    """Clip cues to each timeline clip and shift them to timeline time."""
+    result: list[Cue] = []
+    for clip in clips:
+        source_start = Fraction(clip.source_in, 1) / fps
+        source_end = Fraction(clip.source_in + clip.duration, 1) / fps
+        timeline_offset = Fraction(clip.timeline_offset, 1) / fps
+        for cue in cues:
+            if cue.end <= source_start or cue.start >= source_end:
+                continue
+            start = max(cue.start, source_start) - source_start + timeline_offset
+            end = min(cue.end, source_end) - source_start + timeline_offset
+            if end > start:
+                result.append(Cue(start=start, end=end, text=cue.text))
+    result.sort(key=lambda cue: (cue.start, cue.end))
+    return result
+
+
+def write_srt(cues: list[Cue], destination: Path) -> None:
+    def timestamp(seconds: Fraction) -> str:
+        total_ms = max(0, int(round(float(seconds) * 1000)))
+        hours, remainder = divmod(total_ms, 3_600_000)
+        minutes, remainder = divmod(remainder, 60_000)
+        secs, millis = divmod(remainder, 1000)
+        return f"{hours:02d}:{minutes:02d}:{secs:02d},{millis:03d}"
+
+    lines: list[str] = []
+    for index, cue in enumerate(cues, start=1):
+        start_ms = max(0, int(round(float(cue.start) * 1000)))
+        end_ms = max(start_ms + 1, int(round(float(cue.end) * 1000)))
+        lines.append(str(index))
+        lines.append(f"{timestamp(Fraction(start_ms, 1000))} --> {timestamp(Fraction(end_ms, 1000))}")
+        lines.append(cue.text)
+        lines.append("")
+    destination.write_text("\n".join(lines), encoding="utf-8")
 
 
 def rate_label(fps: Fraction) -> str:
@@ -501,6 +638,17 @@ def main() -> None:
         default=0.0,
         help="seconds of extra footage on each side of a split clip (default: 0)",
     )
+    subtitle_group = parser.add_mutually_exclusive_group()
+    subtitle_group.add_argument(
+        "--subtitles",
+        type=Path,
+        help="SRT/VTT/transcript-export JSON to retime; auto-detected next to the clips or media by default",
+    )
+    subtitle_group.add_argument(
+        "--no-subtitles",
+        action="store_true",
+        help="do not auto-detect or write subtitles",
+    )
     parser.add_argument("--no-audio", action="store_true", help="omit audio from the timeline")
     args = parser.parse_args()
 
@@ -528,6 +676,22 @@ def main() -> None:
     media_duration = args.duration if args.duration is not None else probe["duration"]
 
     clips = load_clips(clips_path, fps, args.sort)
+
+    cues: list[Cue] = []
+    subtitle_path: Path | None = None
+    if args.subtitles:
+        subtitle_path = args.subtitles
+        if not subtitle_path.is_file():
+            fail(f"subtitles file not found: {subtitle_path}")
+        cues = load_cues(subtitle_path)
+        if not cues:
+            fail(f"no subtitle cues found in {subtitle_path}")
+    elif not args.no_subtitles:
+        subtitle_path = find_subtitles(clips_path, media)
+        if subtitle_path:
+            cues = load_cues(subtitle_path)
+            if not cues:
+                subtitle_path = None
 
     gap_frames = to_frames(parse_seconds(args.gap, "gap"), fps)
     offset = 0
@@ -579,6 +743,7 @@ def main() -> None:
 
     combined_written: list[Path] = []
     split_written: list[Path] = []
+    subtitle_written: list[Path] = []
 
     if args.layout in {"combined", "both"}:
         if args.format in {"fcpxml", "both"}:
@@ -589,6 +754,12 @@ def main() -> None:
             combined_written.append(
                 emit_edl(clips, project_name, out_dir / f"{base}.timeline.edl")
             )
+        if cues:
+            combined_cues = timeline_cues(cues, clips, fps)
+            if combined_cues:
+                destination = out_dir / f"{base}.timeline.srt"
+                write_srt(combined_cues, destination)
+                subtitle_written.append(destination)
 
     split_dir = None
     if args.layout in {"split", "both"}:
@@ -607,6 +778,12 @@ def main() -> None:
                 split_written.append(
                     emit_edl([held], timeline_name, split_dir / f"{file_stem}.edl")
                 )
+            if cues:
+                per_clip_cues = timeline_cues(cues, [held], fps)
+                if per_clip_cues:
+                    destination = split_dir / f"{file_stem}.srt"
+                    write_srt(per_clip_cues, destination)
+                    subtitle_written.append(destination)
 
     total_seconds = timeline_duration / float(fps)
     print(f"{len(clips)} clips -> {total_seconds:.2f}s at {float(fps):.3f} fps")
@@ -614,6 +791,10 @@ def main() -> None:
         print(f"wrote: {path}")
     if split_dir is not None:
         print(f"wrote {len(split_written)} files ({len(clips)} timelines) in: {split_dir}")
+    if subtitle_path is not None:
+        print(f"subtitles: {subtitle_path.name} -> {len(subtitle_written)} SRT file(s)")
+    elif not args.no_subtitles:
+        print("subtitles: none found (pass --subtitles PATH to set one)")
 
 
 if __name__ == "__main__":
