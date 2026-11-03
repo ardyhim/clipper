@@ -303,9 +303,10 @@ def parse_transcript_export(path: Path) -> list[Cue]:
         data = json.loads(path.read_text(encoding="utf-8-sig"))
     except json.JSONDecodeError:
         return []
-    segments = (data.get("transcript") or {}).get("segments") or []
+    transcript = data.get("transcript")
+    segments = transcript.get("segments") if isinstance(transcript, dict) else []
     cues: list[Cue] = []
-    for segment in segments:
+    for segment in segments or []:
         if not isinstance(segment, dict):
             continue
         try:
