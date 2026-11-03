@@ -1,0 +1,35 @@
+{
+  "schema": "openshorts.clip-selection.v1",
+  "clips": [
+    {
+      "start": 24.2,
+      "end": 63.0,
+      "score": 88,
+      "title": "Dua Jam di Mobil Sebelum Akhirnya Ngomong",
+      "hook": "Apa yang bikin lo akhirnya beneran keluar?",
+      "reason": "Pertanyaan langsung, cerita mobil yang konkret, lalu satu kata \"Akhirnya\" membalik maknanya.",
+      "description_tiktok": "Dua jam duduk di mobil sebelum akhirnya ngomong. Jawaban bosnya bikin merinding. #resign #kantoran #ceritahidup #relatable",
+      "description_instagram": "Pernah nggak, udah rapi dan siap kerja tapi malah diam di mobil? Jawaban bosnya di detik terakhir mengubah semuanya. #resign #kisahnyata #kerja #mentalhealth"
+    },
+    {
+      "start": 74.0,
+      "end": 109.0,
+      "score": 84,
+      "title": "Klien Pertama, Lima Ratus Ribu",
+      "hook": "Terus bulan pertama gimana? Katanya lo sempat mau balik?",
+      "reason": "Stakes konkret dan callback nangis yang berubah jadi kemenangan kecil.",
+      "description_tiktok": "Tabungan tinggal cukup dua bulan dan klien masih nol. Klien pertama bayar lima ratus ribu, dan dia nangis lagi. #resign #freelance #perjuangan #ceritahidup",
+      "description_instagram": "Bulan pertama setelah resign bukan selalu indah. Tapi klien pertama itu rasanya berbeda. #resign #freelancer #kisahnyata #kerja"
+    },
+    {
+      "start": 0.0,
+      "end": 24.2,
+      "score": 83,
+      "title": "Resign Bukan Karena Benci Kantor",
+      "hook": "Gue resign bukan karena benci kantor.",
+      "reason": "Pengakuan jujur, lelucon hidrasi, lalu penutup yang menjelaskan kenapa dia berhenti bercerita.",
+      "description_tiktok": "Resign bukan karena benci kantor, tapi karena seminggu sekali nangis di parkiran. Jawaban temannya bikin campur aduk. #resign #kantoran #relatable #humor",
+      "description_instagram": "Kadang alasan resign paling jujur justru yang paling sederhana. Dan kadang teman terbaik cuma bisa menyuruh minum air putih. #resign #kisahnyata #relatable #kerja"
+    }
+  ]
+}
