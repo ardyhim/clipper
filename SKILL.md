@@ -158,3 +158,7 @@ There is no visual-review field in the OpenShorts contract: prefer moments that 
 5. Subtitle analysis cannot confirm framing or on-screen action.
 6. No virality guarantees.
 7. Output only the OpenShorts contract.
+
+## Optional post-processing
+
+Timeline export is a separate step, not part of the analysis response. If the user explicitly asks to open the clips in an NLE, run [`scripts/export_timeline.py`](scripts/export_timeline.py) on the JSON you produced. It writes FCPXML/EDL selects timelines and needs the source video; see [README.md](README.md#timeline-export-optional). Never add export keys or commentary to the OpenShorts JSON.
